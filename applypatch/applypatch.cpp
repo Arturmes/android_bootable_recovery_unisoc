@@ -75,7 +75,13 @@ static bool ReadPartitionToBuffer(const Partition& partition, FileContents* out,
     return false;
   }
 
-  android::base::unique_fd dev(open(partition.name.c_str(), O_RDONLY));
+  size_t start;
+  std::string dev_partition_name = partition.name;
+  if((start = dev_partition_name.find(".ap")) != std::string::npos){
+	  dev_partition_name.replace(start, 3, ":ap");
+  }
+
+  android::base::unique_fd dev(open(dev_partition_name.c_str(), O_RDONLY));
   if (dev == -1) {
     PLOG(ERROR) << "Failed to open eMMC partition \"" << partition << "\"";
   } else {
@@ -93,7 +99,7 @@ static bool ReadPartitionToBuffer(const Partition& partition, FileContents* out,
   }
 
   if (!check_backup) {
-    LOG(ERROR) << "Partition contents don't have the expected checksum";
+    LOG(ERROR) << "Partition contents don't have the target version's checksum";
     return false;
   }
 
@@ -138,8 +144,16 @@ static bool WriteBufferToPartition(const FileContents& file_contents, const Part
   size_t len = file_contents.data.size();
   size_t start = 0;
   bool success = false;
+
+
+  size_t start_w;
+  std::string dev_partition_name = partition.name;
+  if((start_w = dev_partition_name.find(".ap")) != std::string::npos){
+	  dev_partition_name.replace(start_w, 3, ":ap");
+  }
+
   for (size_t attempt = 0; attempt < 2; ++attempt) {
-    android::base::unique_fd fd(open(partition.name.c_str(), O_RDWR));
+    android::base::unique_fd fd(open(dev_partition_name.c_str(), O_RDWR));
     if (fd == -1) {
       PLOG(ERROR) << "Failed to open \"" << partition << "\"";
       return false;
@@ -164,7 +178,7 @@ static bool WriteBufferToPartition(const FileContents& file_contents, const Part
       return false;
     }
 
-    fd.reset(open(partition.name.c_str(), O_RDONLY));
+    fd.reset(open(dev_partition_name.c_str(), O_RDONLY));
     if (fd == -1) {
       PLOG(ERROR) << "Failed to reopen \"" << partition << "\" for verification";
       return false;

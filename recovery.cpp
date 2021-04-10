@@ -473,6 +473,79 @@ static void run_graphics_test() {
   ui->ShowText(true);
 }
 
+static bool is_battery_ok(int* required_battery_level) {
+  using android::hardware::health::V1_0::BatteryStatus;
+  using android::hardware::health::V2_0::get_health_service;
+  using android::hardware::health::V2_0::IHealth;
+  using android::hardware::health::V2_0::Result;
+  using android::hardware::health::V2_0::toString;
+
+  android::sp<IHealth> health = get_health_service();
+
+  static constexpr int BATTERY_READ_TIMEOUT_IN_SEC = 10;
+  int wait_second = 0;
+  while (true) {
+    auto charge_status = BatteryStatus::UNKNOWN;
+
+    if (health == nullptr) {
+      LOG(WARNING) << "no health implementation is found, assuming defaults";
+    } else {
+          if(!health
+              ->getChargeStatus([&charge_status](auto res, auto out_status) {
+                if (res == Result::SUCCESS) {
+                  charge_status = out_status;
+                }
+              })
+              .isOk()){
+            LOG(ERROR) << "The return value of getChargeStatus is changed ";
+          } // should not have transport error
+    }
+
+    // Treat unknown status as charged.
+    bool charged = (charge_status != BatteryStatus::DISCHARGING &&
+                    charge_status != BatteryStatus::NOT_CHARGING);
+
+    Result res = Result::UNKNOWN;
+    int32_t capacity = INT32_MIN;
+    if (health != nullptr) {
+      health
+          ->getCapacity([&res, &capacity](auto out_res, auto out_capacity) {
+            res = out_res;
+            capacity = out_capacity;
+          })
+          .isOk();  // should not have transport error
+    }
+
+    LOG(INFO) << "charge_status " << toString(charge_status) << ", charged " << charged
+              << ", status " << toString(res) << ", capacity " << capacity;
+    // At startup, the battery drivers in devices like N5X/N6P take some time to load
+    // the battery profile. Before the load finishes, it reports value 50 as a fake
+    // capacity. BATTERY_READ_TIMEOUT_IN_SEC is set that the battery drivers are expected
+    // to finish loading the battery profile earlier than 10 seconds after kernel startup.
+    if (res == Result::SUCCESS && capacity == 50) {
+      if (wait_second < BATTERY_READ_TIMEOUT_IN_SEC) {
+        sleep(1);
+        wait_second++;
+        continue;
+      }
+    }
+    // If we can't read battery percentage, it may be a device without battery. In this
+    // situation, use 100 as a fake battery percentage.
+    if (res != Result::SUCCESS) {
+      capacity = 100;
+    }
+
+    // GmsCore enters recovery mode to install package when having enough battery percentage.
+    // Normally, the threshold is 40% without charger and 20% with charger. So we should check
+    // battery with a slightly lower limitation.
+    static constexpr int BATTERY_OK_PERCENTAGE = 20;
+    static constexpr int BATTERY_WITH_CHARGER_OK_PERCENTAGE = 15;
+    *required_battery_level = charged ? BATTERY_WITH_CHARGER_OK_PERCENTAGE : BATTERY_OK_PERCENTAGE;
+    return capacity >= *required_battery_level;
+  }
+}
+
+
 // Returns REBOOT, SHUTDOWN, or REBOOT_BOOTLOADER. Returning NO_ACTION means to take the default,
 // which is to reboot or shutdown depending on if the --shutdown_after flag was passed to recovery.
 static Device::BuiltinAction prompt_and_wait(Device* device, int status) {
@@ -555,8 +628,15 @@ static Device::BuiltinAction prompt_and_wait(Device* device, int status) {
         } else if (chosen_action == Device::APPLY_ADB_SIDELOAD) {
           status = ApplyFromAdb(device, false /* rescue_mode */, &reboot_action);
         } else {
-          adb = false;
-          status = ApplyFromSdcard(device, ui);
+		  adb = false;
+		  int required_battery_level;
+		  if(is_battery_ok(&required_battery_level)){
+			  status = ApplyFromSdcard(device, ui);
+		  }else{
+			  ui->Print("battery capacity is not enough for installing package: %d%% needed\n",
+					  required_battery_level);
+			  status = INSTALL_SKIPPED;
+		  }
         }
 
         ui->Print("\nInstall from %s completed with status %d.\n", adb ? "ADB" : "SD card", status);
@@ -604,75 +684,6 @@ static void print_property(const char* key, const char* name, void* /* cookie */
   printf("%s=%s\n", key, name);
 }
 
-static bool is_battery_ok(int* required_battery_level) {
-  using android::hardware::health::V1_0::BatteryStatus;
-  using android::hardware::health::V2_0::get_health_service;
-  using android::hardware::health::V2_0::IHealth;
-  using android::hardware::health::V2_0::Result;
-  using android::hardware::health::V2_0::toString;
-
-  android::sp<IHealth> health = get_health_service();
-
-  static constexpr int BATTERY_READ_TIMEOUT_IN_SEC = 10;
-  int wait_second = 0;
-  while (true) {
-    auto charge_status = BatteryStatus::UNKNOWN;
-
-    if (health == nullptr) {
-      LOG(WARNING) << "no health implementation is found, assuming defaults";
-    } else {
-      health
-          ->getChargeStatus([&charge_status](auto res, auto out_status) {
-            if (res == Result::SUCCESS) {
-              charge_status = out_status;
-            }
-          })
-          .isOk();  // should not have transport error
-    }
-
-    // Treat unknown status as charged.
-    bool charged = (charge_status != BatteryStatus::DISCHARGING &&
-                    charge_status != BatteryStatus::NOT_CHARGING);
-
-    Result res = Result::UNKNOWN;
-    int32_t capacity = INT32_MIN;
-    if (health != nullptr) {
-      health
-          ->getCapacity([&res, &capacity](auto out_res, auto out_capacity) {
-            res = out_res;
-            capacity = out_capacity;
-          })
-          .isOk();  // should not have transport error
-    }
-
-    LOG(INFO) << "charge_status " << toString(charge_status) << ", charged " << charged
-              << ", status " << toString(res) << ", capacity " << capacity;
-    // At startup, the battery drivers in devices like N5X/N6P take some time to load
-    // the battery profile. Before the load finishes, it reports value 50 as a fake
-    // capacity. BATTERY_READ_TIMEOUT_IN_SEC is set that the battery drivers are expected
-    // to finish loading the battery profile earlier than 10 seconds after kernel startup.
-    if (res == Result::SUCCESS && capacity == 50) {
-      if (wait_second < BATTERY_READ_TIMEOUT_IN_SEC) {
-        sleep(1);
-        wait_second++;
-        continue;
-      }
-    }
-    // If we can't read battery percentage, it may be a device without battery. In this
-    // situation, use 100 as a fake battery percentage.
-    if (res != Result::SUCCESS) {
-      capacity = 100;
-    }
-
-    // GmsCore enters recovery mode to install package when having enough battery percentage.
-    // Normally, the threshold is 40% without charger and 20% with charger. So we should check
-    // battery with a slightly lower limitation.
-    static constexpr int BATTERY_OK_PERCENTAGE = 20;
-    static constexpr int BATTERY_WITH_CHARGER_OK_PERCENTAGE = 15;
-    *required_battery_level = charged ? BATTERY_WITH_CHARGER_OK_PERCENTAGE : BATTERY_OK_PERCENTAGE;
-    return capacity >= *required_battery_level;
-  }
-}
 
 // Set the retry count to |retry_count| in BCB.
 static void set_retry_bootloader_message(int retry_count, const std::vector<std::string>& args) {
@@ -846,6 +857,24 @@ Device::BuiltinAction start_recovery(Device* device, const std::vector<std::stri
   }
   printf("\n\n");
 
+  if (update_package) {
+	  if (strncmp(update_package, "/storage/", 9) == 0) {
+          int len = strlen(update_package) + 12;
+          const char* package_name = strrchr(update_package,'/');
+          if (package_name == NULL){
+              ui->Print("can't find the ota zip\n");
+          }
+          char* modified_path = (char*)malloc(len);
+          strlcpy(modified_path, "/storage/sdcard0", len);
+          strlcat(modified_path, package_name, len);
+          printf("(replacing path \"%s\" with \"%s\")\n",
+                 update_package, modified_path);
+          update_package = modified_path;
+      }
+  }
+  printf("\n");
+
+
   property_list(print_property, nullptr);
   printf("\n");
 
@@ -924,6 +953,7 @@ Device::BuiltinAction start_recovery(Device* device, const std::vector<std::stri
 
     ui->ShowText(true);
     ui->SetBackground(RecoveryUI::ERROR);
+    ui->Print("******NEED TO WIPE USERDATA*****\nREASON IS:\n%s\n",reason);
     status = prompt_and_wipe_data(device);
     if (status != INSTALL_KEY_INTERRUPTED) {
       ui->ShowText(false);

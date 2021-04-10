@@ -45,6 +45,15 @@
 #include "otautil/mounts.h"
 #include "otautil/sysutil.h"
 
+#include <stdio.h>
+#include <string.h>
+
+#ifdef HAVE_SYS_IOCTL_H
+#include <sys/ioctl.h>
+#endif
+#include "blkid/blkid.h"
+#include "blkid/blkidP.h"
+
 using android::fs_mgr::Fstab;
 using android::fs_mgr::FstabEntry;
 using android::fs_mgr::ReadDefaultFstab;
@@ -61,13 +70,37 @@ void load_volume_table() {
       .mount_point = "/tmp", .fs_type = "ramdisk", .blk_device = "ramdisk", .length = 0 });
 
   std::cout << "recovery filesystem table" << std::endl << "=========================" << std::endl;
+
   for (size_t i = 0; i < fstab.size(); ++i) {
-    const auto& entry = fstab[i];
+    //const auto& entry = fstab[i];
+    auto& entry = fstab[i];
     std::cout << "  " << i << " " << entry.mount_point << " "
-              << " " << entry.fs_type << " " << entry.blk_device << " " << entry.length
-              << std::endl;
-  }
-  std::cout << std::endl;
+      << " " << entry.fs_type << " " << entry.blk_device << " " << entry.length
+      << std::endl;
+    const char* MOUNT_POINT_SD = entry.mount_point.c_str();
+    const char* BLK_DEVICE_SD = entry.blk_device.c_str();
+    std::string FS_TYPE_SD= "exfat";
+        if (strcmp(MOUNT_POINT_SD, "/storage/sdcard0") == 0) {
+                blkid_cache cache = NULL;
+
+                if (blkid_get_cache(&cache, NULL) < 0) {
+                   std::cout << "blkid_get_cache  failed" << std::endl;
+                }
+
+                blkid_dev dev = blkid_get_dev(cache, BLK_DEVICE_SD,BLKID_DEV_NORMAL);
+                if(dev && dev->bid_type) {
+                             if (strcmp(dev->bid_type, "exfat") == 0) {
+                                  entry.fs_type = FS_TYPE_SD;
+                             }
+                        blkid_put_cache(cache);
+                }
+                else
+                {
+                        blkid_put_cache(cache);
+                }
+        }
+    std::cout << std::endl;
+    }
 }
 
 Volume* volume_for_mount_point(const std::string& mount_point) {
@@ -266,6 +299,8 @@ int setup_install_mounts() {
         LOG(ERROR) << "Failed to mount " << entry.mount_point;
         return -1;
       }
+	} else if(entry.mount_point == "/storage/sdcard0"){
+		//do nothing for SD card
     } else {
       if (ensure_path_unmounted(entry.mount_point) != 0) {
         LOG(ERROR) << "Failed to unmount " << entry.mount_point;

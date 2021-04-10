@@ -118,6 +118,12 @@ cc_binary {
     static_libs: [
         "librecovery",
         "librecovery_ui_default",
+        "libext2_com_err",
+        "libext2_blkid",
+        "libext2_quota",
+        "libext2_uuid",
+        "libext2_e2p",
+        "libext2fs",
     ],
 
     required: [

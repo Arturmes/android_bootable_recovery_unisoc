@@ -12,6 +12,47 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+cc_defaults {
+    name: "libotautil_defaults",
+
+    defaults: [
+        "recovery_defaults",
+    ],
+
+    static_libs: [
+        "libbspatch",
+        "libext4_utils",
+        "libdm",
+        "libfec",
+        "libfec_rs",
+        "libverity_tree",
+        "libgtest_prod",
+        "liblog",
+        "liblp",
+        "libselinux",
+        "libsparse",
+        "libsquashfs_utils",
+        "libbrotli",
+        "libbz",
+        "libziparchive",
+        "libz",
+        "libbase",
+        "libcrypto",
+        "libcrypto_utils",
+        "libcutils",
+        "libutils",
+
+        "libext2_com_err",
+        "libext2_blkid",
+        "libext2_quota",
+        "libext2_uuid",
+        "libext2_e2p",
+        "libext2fs",
+    ],
+}
+
+
+
 cc_library_static {
     name: "libotautil",
 
@@ -20,6 +61,7 @@ cc_library_static {
 
     defaults: [
         "recovery_defaults",
+        "libotautil_defaults",
     ],
 
     // Minimal set of files to support host build.
@@ -50,10 +92,17 @@ cc_library_static {
 
             include_dirs: [
                 "system/vold",
+                "external/e2fsprogs/lib",
             ],
 
             static_libs: [
                 "libfstab",
+                "libext2_com_err",
+                "libext2_blkid",
+                "libext2_quota",
+                "libext2_uuid",
+                "libext2_e2p",
+                "libext2fs",
             ],
 
             shared_libs: [

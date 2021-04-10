@@ -419,7 +419,7 @@ void RecoveryUI::SetScreensaverState(ScreensaverState state) {
         LOG(INFO) << "Brightness: " << brightness_normal_value_ << " (" << brightness_normal_
                   << "%)";
       } else {
-        LOG(ERROR) << "Unable to set brightness to normal";
+        LOG(WARNING) << "Unable to set brightness to normal";
       }
       break;
     case ScreensaverState::DIMMED:

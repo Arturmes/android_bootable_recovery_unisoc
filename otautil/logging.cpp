@@ -50,6 +50,11 @@ constexpr const char* LAST_LOG_FILTER = "recovery/last_log";
 
 constexpr const char* CACHE_LOG_DIR = "/cache/recovery";
 
+static constexpr const char* SDCARD_ROOT = "/storage/sdcard0";
+constexpr const char *SDCARD_LOG_DIR = "/storage/sdcard0/recovery_log";
+constexpr const char *LAST_SDCARD_KMSG_FILE = "/storage/sdcard0/recovery_log/last_kmsg";
+constexpr const char *LAST_SDCARD_LOG_FILE = "/storage/sdcard0/recovery_log/last_log";
+
 static struct selabel_handle* logging_sehandle;
 
 void SetLoggingSehandle(selabel_handle* handle) {
@@ -214,6 +219,36 @@ void copy_logs(bool save_current_log, bool has_cache, const selabel_handle* seha
   // Always write to pmsg, this allows the OTA logs to be caught in `logcat -L`.
   copy_log_file_to_pmsg(Paths::Get().temporary_log_file(), LAST_LOG_FILE);
   copy_log_file_to_pmsg(Paths::Get().temporary_install_file(), LAST_INSTALL_FILE);
+
+  Volume* v_mt = volume_for_mount_point(SDCARD_ROOT);
+
+  struct stat sb;
+  if (stat(v_mt->blk_device.c_str() , &sb) == 0) {
+	  if(0 == ensure_path_mounted(SDCARD_ROOT)){
+		  if (stat(SDCARD_LOG_DIR, &sb) != 0) {
+			  if (mkdir(SDCARD_LOG_DIR, 0700) != 0){
+				  PLOG(ERROR) << "Failed to mkdir " << SDCARD_LOG_DIR;
+			  } else {
+				  rotate_logs(LAST_SDCARD_LOG_FILE, LAST_SDCARD_KMSG_FILE);
+				  copy_log_file(Paths::Get().temporary_log_file(), LAST_SDCARD_LOG_FILE, false, sehandle);
+				  save_kernel_log(LAST_SDCARD_KMSG_FILE);
+				  chmod(LAST_SDCARD_KMSG_FILE, 0600);
+				  chown(LAST_SDCARD_KMSG_FILE, AID_SYSTEM, AID_SYSTEM);
+				  chmod(LAST_SDCARD_LOG_FILE, 0640);
+				  sync();
+			  }
+		  } else {
+			  rotate_logs(LAST_SDCARD_LOG_FILE, LAST_SDCARD_KMSG_FILE);
+			  copy_log_file(Paths::Get().temporary_log_file(), LAST_SDCARD_LOG_FILE, false, sehandle);
+			  save_kernel_log(LAST_SDCARD_KMSG_FILE);
+			  chmod(LAST_SDCARD_KMSG_FILE, 0600);
+			  chown(LAST_SDCARD_KMSG_FILE, AID_SYSTEM, AID_SYSTEM);
+			  chmod(LAST_SDCARD_LOG_FILE, 0640);
+			  sync();
+		  }
+	  }
+  }
+
 
   // We can do nothing for now if there's no /cache partition.
   if (!has_cache) {

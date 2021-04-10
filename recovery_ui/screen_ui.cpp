@@ -47,6 +47,10 @@
 #include "recovery_ui/device.h"
 #include "recovery_ui/ui.h"
 
+//special lcd 1;
+//normal lcd 0;
+int Max_pixel_special = 40;
+
 // Return the current time as a double (including fractions of a second).
 static double now() {
   struct timeval tv;
@@ -304,12 +308,14 @@ ScreenRecoveryUI::ScreenRecoveryUI() : ScreenRecoveryUI(false) {}
 constexpr int kDefaultMarginHeight = 0;
 constexpr int kDefaultMarginWidth = 0;
 constexpr int kDefaultAnimationFps = 30;
+constexpr int  Default_Flag_DropScreen = 0;
 
 ScreenRecoveryUI::ScreenRecoveryUI(bool scrollable_menu)
     : margin_width_(
           android::base::GetIntProperty("ro.recovery.ui.margin_width", kDefaultMarginWidth)),
       margin_height_(
-          android::base::GetIntProperty("ro.recovery.ui.margin_height", kDefaultMarginHeight)),
+          android::base::GetIntProperty("ro.recovery.ui.dropscreen", Default_Flag_DropScreen)?
+          android::base::GetIntProperty("ro.recovery.ui.margin_height", kDefaultMarginHeight):kDefaultMarginHeight),
       animation_fps_(
           android::base::GetIntProperty("ro.recovery.ui.animation_fps", kDefaultAnimationFps)),
       density_(static_cast<float>(android::base::GetIntProperty("ro.sf.lcd_density", 160)) / 160.f),
@@ -713,17 +719,26 @@ void ScreenRecoveryUI::draw_menu_and_text_buffer_locked(
 
   if (menu_) {
     int x = margin_width_ + kMenuIndent;
-
     SetColor(UIElement::INFO);
-
     for (size_t i = 0; i < title_lines_.size(); i++) {
-      y += DrawTextLine(x, y, title_lines_[i], i == 0);
+        if(!android::base::GetIntProperty("ro.recovery.ui.dropscreen", Default_Flag_DropScreen)){
+            y += DrawTextLine(x, y, title_lines_[i], i == 0);
+        }
+        else{
+            y += DrawTextLine(x, y + Max_pixel_special, title_lines_[i], i == 0);
+        }
     }
-
-    y += DrawTextLines(x, y, help_message);
-
-    y += menu_->DrawHeader(x, y);
-    y += menu_->DrawItems(x, y, ScreenWidth(), IsLongPress());
+    if(!android::base::GetIntProperty("ro.recovery.ui.dropscreen", Default_Flag_DropScreen))
+    {
+        y += DrawTextLines(x, y, help_message);
+        y += menu_->DrawHeader(x, y);
+        y += menu_->DrawItems(x, y, ScreenWidth(), IsLongPress());
+    }
+    else{
+        y += DrawTextLines(x, y + Max_pixel_special, help_message);
+        y += menu_->DrawHeader(x, y + Max_pixel_special);
+        y += menu_->DrawItems(x, y + Max_pixel_special, ScreenWidth(), IsLongPress());
+    }
   }
 
   // Display from the bottom up, until we hit the top of the screen, the bottom of the menu, or
@@ -732,10 +747,17 @@ void ScreenRecoveryUI::draw_menu_and_text_buffer_locked(
   int row = text_row_;
   size_t count = 0;
   for (int ty = ScreenHeight() - margin_height_ - char_height_; ty >= y && count < text_rows_;
-       ty -= char_height_, ++count) {
-    DrawTextLine(margin_width_, ty, text_[row], false);
-    --row;
-    if (row < 0) row = text_rows_ - 1;
+          ty -= char_height_, ++count) {
+      if(!android::base::GetIntProperty("ro.recovery.ui.dropscreen", Default_Flag_DropScreen)){
+          DrawTextLine(margin_width_, ty, text_[row], false);
+          --row;
+          if (row < 0) row = text_rows_ - 1;
+      }
+      else{
+          DrawTextLine(margin_width_, ty + Max_pixel_special, text_[row], false);
+          --row;
+          if (row < 0) row = text_rows_ - 1;
+      }
   }
 }
 

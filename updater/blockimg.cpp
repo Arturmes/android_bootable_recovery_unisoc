@@ -901,11 +901,13 @@ static int CreateStash(State* state, size_t maxblocks, const std::string& base) 
       return -1;
     }
 
-    if (!CheckAndFreeSpaceOnCache(max_stash_size)) {
-      ErrorAbort(state, kStashCreationFailure, "not enough space for stash (%zu needed)",
-                 max_stash_size);
-      return -1;
-    }
+	if (!state->is_retry) {
+		if (!CheckAndFreeSpaceOnCache(max_stash_size)) {
+			ErrorAbort(state, kStashCreationFailure, "not enough space for stash (%zu needed)",
+					max_stash_size);
+			return -1;
+		}
+	}
 
     return 1;  // Created directory
   }
@@ -930,6 +932,13 @@ static int CreateStash(State* state, size_t maxblocks, const std::string& base) 
     }
     existing += static_cast<size_t>(sb.st_size);
   });
+
+  std::string cache_temp_source = Paths::Get().cache_temp_source();
+  if (stat(cache_temp_source.c_str(), &sb) == -1) {
+      LOG(INFO) << "stat: " << cache_temp_source << "not exist";
+  }else{
+	  existing += static_cast<size_t>(sb.st_size);
+  }
 
   if (max_stash_size > existing) {
     size_t needed = max_stash_size - existing;

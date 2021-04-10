@@ -78,6 +78,7 @@ service charger /system/bin/charger
     seclabel u:r:charger:s0
 
 service recovery /system/bin/recovery
+    class recovery
     socket recovery stream 422 system system
     seclabel u:r:recovery:s0
 
@@ -97,7 +98,7 @@ on property:service.adb.root=1
 
 # Always start adbd on userdebug and eng builds
 on fs && property:ro.debuggable=1
-    setprop sys.usb.config adb
+    start adbd
 
 on fs && property:sys.usb.configfs=1
     mount configfs none /config

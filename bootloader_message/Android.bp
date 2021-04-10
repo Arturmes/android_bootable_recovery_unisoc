@@ -36,6 +36,7 @@ cc_library {
         "libbootloader_message_defaults",
     ],
     recovery_available: true,
+    vendor_available: true,
 }
 
 cc_library_static {
